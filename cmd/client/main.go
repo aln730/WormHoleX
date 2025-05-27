@@ -6,21 +6,34 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 func main() {
-
 	name := flag.String("name", "test", "Subdomain name")
 	local := flag.String("local", "http://localhost:3000", "Local target URL")
 	server := flag.String("server", "http://localhost:8080", "Tunnel server URL")
+	retryDelay := flag.Int("retry", 5, "Seconds to wait before retrying registration")
 	flag.Parse()
 
 	registerURL := fmt.Sprintf("%s/register?name=%s&target=%s", *server, *name, *local)
-	resp, err := http.Get(registerURL)
-	if err != nil {
-		log.Fatalf("Failed to register tunnel: %v", err)
+
+	// Retry registration until successful. Let's see how this goes.
+	for {
+		resp, err := http.Get(registerURL)
+		if err != nil {
+			log.Printf("Failed to register tunnel: %v. Retrying in %d seconds...", err, *retryDelay)
+			time.Sleep(time.Duration(*retryDelay) * time.Second)
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Registration failed with status: %s. Retrying in %d seconds...", resp.Status, *retryDelay)
+			time.Sleep(time.Duration(*retryDelay) * time.Second)
+			continue
+		}
+		break
 	}
-	defer resp.Body.Close()
 
 	log.Printf("Tunnel registered. Access via: %s/%s\n", *server, *name)
 
@@ -28,7 +41,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Invalid local URL: %v", err)
 	}
-
 	if parsedURL.Host == "" {
 		log.Fatalf("Please provide a valid host:port in the --local flag")
 	}
